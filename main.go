@@ -24,7 +24,7 @@ var debug bool
 
 func init() {
 	pflag.IntVar(&port, "port", 5900, "vnc port")
-	pflag.StringVar(&url, "url", "http://192.168.1.82:8080", "n1 url")
+	pflag.StringVar(&url, "url", "http://192.168.1.85:8080", "n1 url")
 	pflag.StringVar(&password, "password", "", "vnc password")
 	pflag.BoolVar(&debug, "debug", false, "debug mode")
 }
@@ -151,6 +151,12 @@ func n1Screen(vs *libvnc.VNCServer, url string, w, h int) {
 			y2 = diffRect.Max.Y
 		}
 		oldRGBAImg = rgbaImg
+		if debug {
+			log.Printf("[SCREEN] %d %d %d %d", w1, y1, w2, y2)
+		}
+		if w1 == 0 && y1 == 0 && w2 == 0 && y2 == 0 {
+			continue
+		}
 		vncBlackBuf, _ := vs.RequestBackBuf()
 		copy(vncBlackBuf, rgbaImg.Pix)
 		vs.ReleaseBackBuf(w1, y1, w2, y2)
