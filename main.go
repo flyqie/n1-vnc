@@ -48,6 +48,7 @@ func main() {
 		}
 	})
 	vs.SetHaveClientStatusCallback(func(status bool) {
+		// TODO: 在无连接时不获取图像
 		if debug {
 			log.Printf("[HAVE_CLIENT_STATUS] %t\n", status)
 		}
