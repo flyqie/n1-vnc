@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"github.com/flyqie/n1-vnc/libvnc"
 	"github.com/spf13/pflag"
@@ -24,7 +25,7 @@ var debug bool
 
 func init() {
 	pflag.IntVar(&port, "port", 5900, "vnc port")
-	pflag.StringVar(&url, "url", "http://192.168.1.85:8080", "n1 url")
+	pflag.StringVar(&url, "url", "http://192.168.1.86:8080", "n1 url")
 	pflag.StringVar(&password, "password", "", "vnc password")
 	pflag.BoolVar(&debug, "debug", false, "debug mode")
 }
@@ -32,7 +33,9 @@ func init() {
 func main() {
 	log.Printf("[MAIN] Hello~\n")
 	pflag.Parse()
-	kbCH := make(chan uint32, 255)
+	kbCh := make(chan uint32, 255)
+	csrCh := make(chan bool)
+	cssCh := make(chan struct{})
 	if strings.HasSuffix(url, "/") {
 		url = url[:len(url)-1]
 	}
@@ -44,21 +47,23 @@ func main() {
 	vs := libvnc.NewVNCServer(w, h, 32, port, "N1", password, "n1")
 	vs.SetKeyEventCallback(func(down bool, key uint32) {
 		if down {
-			kbCH <- key
+			kbCh <- key
 		}
 	})
 	vs.SetHaveClientStatusCallback(func(status bool) {
-		// TODO: 在无连接时不获取图像
 		if debug {
 			log.Printf("[HAVE_CLIENT_STATUS] %t\n", status)
 		}
+		csrCh <- status
+		<-cssCh
 	})
 
-	go n1KeyBoard(kbCH, url)
-	go n1Screen(vs, url, w, h)
+	go n1KeyBoard(kbCh, url)
+	go n1ScreenMgr(vs, url, w, h, csrCh, cssCh)
 	go sigListen(vs)
 	log.Printf("[MAIN] forward %s to :%d\n", url, port)
 	vs.Run()
+	vs.Clean()
 	log.Printf("[MAIN] Bye~\n")
 }
 
@@ -69,7 +74,6 @@ func sigListen(vs *libvnc.VNCServer) {
 	log.Printf("[MAIN] Shutting down...\n")
 	vs.Stop()
 	time.Sleep(3 * time.Second)
-	vs.Clean()
 }
 
 func getN1ScreenWH(url string) (int, int) {
@@ -111,55 +115,81 @@ func compareRGBAImages(img1 *image.RGBA, img2 *image.RGBA) image.Rectangle {
 	return rect
 }
 
-func n1Screen(vs *libvnc.VNCServer, url string, w, h int) {
+func n1ScreenMgr(vs *libvnc.VNCServer, url string, w, h int, recvCh chan bool, sendCh chan struct{}) {
+	var ctx context.Context
+	var cancel context.CancelFunc
+	for {
+		status := <-recvCh
+		if status == false {
+			// 没有客户端连接, 关闭自动获取
+			if cancel != nil {
+				cancel()
+			}
+		} else {
+			ctx, cancel = context.WithCancel(context.Background())
+			go n1Screen(vs, url, w, h, ctx)
+			// 保证屏幕线程不会出现用户连接时未获取到的问题
+			time.Sleep(1 * time.Second)
+		}
+		sendCh <- struct{}{}
+	}
+}
+
+func n1Screen(vs *libvnc.VNCServer, url string, w, h int, ctx context.Context) {
 	client := &http.Client{}
 	var oldRGBAImg *image.RGBA
+ScreenLoop:
 	for {
-		response, err := client.Get(url + "/v1/screenshot")
-		if err != nil {
-			log.Printf("[SCREEN] %s\n", err.Error())
-			continue
-		}
-		body, err := ioutil.ReadAll(response.Body)
-		_ = response.Body.Close()
-		if err != nil {
-			log.Printf("[SCREEN] %s\n", err.Error())
-			continue
-		}
-		img, err := jpeg.Decode(bytes.NewReader(body))
-		if err != nil {
-			log.Printf("[SCREEN] %s\n", err.Error())
-			continue
-		}
-		bounds := img.Bounds()
-		rgbaImg := image.NewRGBA(bounds)
-		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-			for x := bounds.Min.X; x < bounds.Max.X; x++ {
-				c := img.At(x, y)
-				rgbaImg.Set(x, y, c)
+		select {
+		case <-ctx.Done():
+			break ScreenLoop
+		default:
+			response, err := client.Get(url + "/v1/screenshot")
+			if err != nil {
+				log.Printf("[SCREEN] %s\n", err.Error())
+				continue
 			}
+			body, err := ioutil.ReadAll(response.Body)
+			_ = response.Body.Close()
+			if err != nil {
+				log.Printf("[SCREEN] %s\n", err.Error())
+				continue
+			}
+			img, err := jpeg.Decode(bytes.NewReader(body))
+			if err != nil {
+				log.Printf("[SCREEN] %s\n", err.Error())
+				continue
+			}
+			bounds := img.Bounds()
+			rgbaImg := image.NewRGBA(bounds)
+			for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+				for x := bounds.Min.X; x < bounds.Max.X; x++ {
+					c := img.At(x, y)
+					rgbaImg.Set(x, y, c)
+				}
+			}
+			w1 := 0
+			y1 := 0
+			w2 := w
+			y2 := h
+			if oldRGBAImg != nil {
+				diffRect := compareRGBAImages(oldRGBAImg, rgbaImg)
+				w1 = diffRect.Min.X
+				y1 = diffRect.Min.Y
+				w2 = diffRect.Max.X
+				y2 = diffRect.Max.Y
+			}
+			oldRGBAImg = rgbaImg
+			if debug {
+				log.Printf("[SCREEN] %d %d %d %d", w1, y1, w2, y2)
+			}
+			if w1 == 0 && y1 == 0 && w2 == 0 && y2 == 0 {
+				continue
+			}
+			vncBlackBuf, _ := vs.RequestBackBuf()
+			copy(vncBlackBuf, rgbaImg.Pix)
+			vs.ReleaseBackBuf(w1, y1, w2, y2)
 		}
-		w1 := 0
-		y1 := 0
-		w2 := w
-		y2 := h
-		if oldRGBAImg != nil {
-			diffRect := compareRGBAImages(oldRGBAImg, rgbaImg)
-			w1 = diffRect.Min.X
-			y1 = diffRect.Min.Y
-			w2 = diffRect.Max.X
-			y2 = diffRect.Max.Y
-		}
-		oldRGBAImg = rgbaImg
-		if debug {
-			log.Printf("[SCREEN] %d %d %d %d", w1, y1, w2, y2)
-		}
-		if w1 == 0 && y1 == 0 && w2 == 0 && y2 == 0 {
-			continue
-		}
-		vncBlackBuf, _ := vs.RequestBackBuf()
-		copy(vncBlackBuf, rgbaImg.Pix)
-		vs.ReleaseBackBuf(w1, y1, w2, y2)
 	}
 }
 
