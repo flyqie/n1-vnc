@@ -31,7 +31,8 @@ jobs:
       
       - name: 'Pack N1-VNC'
         run: |
-          zip -r n1-vnc_prebuilt_linux.zip prebuilt/*
+          cd prebuilt
+          zip -r ../n1-vnc_prebuilt_linux.zip *
 
       - name: 'Upload artifact'
         uses: actions/upload-artifact@v2
