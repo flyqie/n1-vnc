@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/flyqie/n1-vnc/libvnc"
 	"github.com/spf13/pflag"
 	"image"
@@ -13,19 +14,18 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 )
 
-var url string
+var ip string
 var password string
 var port int
 var debug bool
 
 func init() {
 	pflag.IntVar(&port, "port", 5900, "vnc port")
-	pflag.StringVar(&url, "url", "http://192.168.1.86:8080", "n1 url")
+	pflag.StringVar(&ip, "ip", "192.168.1.86", "n1 ip")
 	pflag.StringVar(&password, "password", "", "vnc password")
 	pflag.BoolVar(&debug, "debug", false, "debug mode")
 }
@@ -36,10 +36,7 @@ func main() {
 	kbCh := make(chan uint32, 255)
 	csrCh := make(chan bool)
 	cssCh := make(chan struct{})
-	if strings.HasSuffix(url, "/") {
-		url = url[:len(url)-1]
-	}
-	w, h := getN1ScreenWH(url)
+	w, h := getN1ScreenWH(ip)
 	if w <= 0 || h <= 0 {
 		log.Fatalf("[MAIN] N1 screen width and height must be positive\n")
 	}
@@ -58,10 +55,10 @@ func main() {
 		<-cssCh
 	})
 
-	go n1KeyBoard(kbCh, url)
-	go n1ScreenMgr(vs, url, w, h, csrCh, cssCh)
+	go n1KeyBoard(kbCh, ip)
+	go n1ScreenMgr(vs, ip, w, h, csrCh, cssCh)
 	go sigListen(vs)
-	log.Printf("[MAIN] forward %s to :%d\n", url, port)
+	log.Printf("[MAIN] forward %s to :%d\n", ip, port)
 	vs.Run()
 	vs.Clean()
 	log.Printf("[MAIN] Bye~\n")
@@ -76,9 +73,9 @@ func sigListen(vs *libvnc.VNCServer) {
 	time.Sleep(3 * time.Second)
 }
 
-func getN1ScreenWH(url string) (int, int) {
+func getN1ScreenWH(ip string) (int, int) {
 	client := &http.Client{}
-	response, err := client.Get(url + "/v1/screenshot")
+	response, err := client.Get(fmt.Sprintf("http://%s:8080/v1/screenshot", ip))
 	if err != nil {
 		log.Printf("[TEST] %s\n", err.Error())
 		return 0, 0
@@ -115,7 +112,7 @@ func compareRGBAImages(img1 *image.RGBA, img2 *image.RGBA) image.Rectangle {
 	return rect
 }
 
-func n1ScreenMgr(vs *libvnc.VNCServer, url string, w, h int, recvCh chan bool, sendCh chan struct{}) {
+func n1ScreenMgr(vs *libvnc.VNCServer, ip string, w, h int, recvCh chan bool, sendCh chan struct{}) {
 	var ctx context.Context
 	var cancel context.CancelFunc
 	for {
@@ -127,7 +124,7 @@ func n1ScreenMgr(vs *libvnc.VNCServer, url string, w, h int, recvCh chan bool, s
 			}
 		} else {
 			ctx, cancel = context.WithCancel(context.Background())
-			go n1Screen(vs, url, w, h, ctx)
+			go n1Screen(vs, ip, w, h, ctx)
 			// 保证屏幕线程不会出现用户连接时未获取到的问题
 			time.Sleep(1 * time.Second)
 		}
@@ -135,7 +132,7 @@ func n1ScreenMgr(vs *libvnc.VNCServer, url string, w, h int, recvCh chan bool, s
 	}
 }
 
-func n1Screen(vs *libvnc.VNCServer, url string, w, h int, ctx context.Context) {
+func n1Screen(vs *libvnc.VNCServer, ip string, w, h int, ctx context.Context) {
 	client := &http.Client{}
 	var oldRGBAImg *image.RGBA
 ScreenLoop:
@@ -144,7 +141,7 @@ ScreenLoop:
 		case <-ctx.Done():
 			break ScreenLoop
 		default:
-			response, err := client.Get(url + "/v1/screenshot")
+			response, err := client.Get(fmt.Sprintf("http://%s:8080/v1/screenshot", ip))
 			if err != nil {
 				log.Printf("[SCREEN] %s\n", err.Error())
 				continue
@@ -193,7 +190,7 @@ ScreenLoop:
 	}
 }
 
-func n1KeyBoard(ch chan uint32, url string) {
+func n1KeyBoard(ch chan uint32, ip string) {
 	client := &http.Client{}
 	for {
 		var keyCode int
@@ -231,7 +228,7 @@ func n1KeyBoard(ch chan uint32, url string) {
 			log.Printf("[KEYBOARD] %s\n", err.Error())
 			continue
 		}
-		req, err := http.NewRequest("POST", url+"/v1/keyevent", bytes.NewBuffer(jsonData))
+		req, err := http.NewRequest("POST", fmt.Sprintf("http://%s:8080/v1/keyevent", ip), bytes.NewBuffer(jsonData))
 		if err != nil {
 			log.Printf("[KEYBOARD] %s\n", err.Error())
 			continue
