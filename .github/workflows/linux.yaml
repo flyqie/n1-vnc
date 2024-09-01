@@ -35,7 +35,7 @@ jobs:
           zip -r ../n1-vnc_prebuilt_linux.zip *
 
       - name: 'Upload artifact'
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
            name: n1-vnc_prebuilt_linux
            path: n1-vnc_prebuilt_linux.zip
