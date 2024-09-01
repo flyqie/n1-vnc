@@ -30,6 +30,17 @@ func init() {
 	pflag.BoolVar(&debug, "debug", false, "debug mode")
 }
 
+type ChannelWriter struct {
+	C chan []byte
+}
+
+func (cw *ChannelWriter) Write(p []byte) (n int, err error) {
+	cp := make([]byte, len(p))
+	copy(cp, p)
+	cw.C <- cp
+	return len(p), nil
+}
+
 func main() {
 	log.Printf("[MAIN] Hello~\n")
 	pflag.Parse()
@@ -39,6 +50,25 @@ func main() {
 	w, h := getN1ScreenWH(ip)
 	if w <= 0 || h <= 0 {
 		log.Fatalf("[MAIN] N1 screen width and height must be positive\n")
+	}
+	if debug {
+		log.Printf("[MAIN] Debug mode enabled\n")
+		rfbErrCh := make(chan []byte, 255)
+		rfbInfoCh := make(chan []byte, 255)
+		rfbErrChWriter := ChannelWriter{C: rfbErrCh}
+		rfbInfoChWriter := ChannelWriter{C: rfbInfoCh}
+		go func() {
+			for {
+				select {
+				case err := <-rfbErrCh:
+					log.Printf("[LIBVNCSERVER_ERR] %s", err)
+				case info := <-rfbInfoCh:
+					log.Printf("[LIBVNCSERVER_INFO] %s", info)
+				}
+			}
+		}()
+		libvnc.RfbInfoLogger = &rfbInfoChWriter
+		libvnc.RfbErrLogger = &rfbErrChWriter
 	}
 
 	vs := libvnc.NewVNCServer(w, h, 32, port, "N1", password, "n1")
