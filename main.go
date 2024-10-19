@@ -25,7 +25,7 @@ var debug bool
 
 func init() {
 	pflag.IntVar(&port, "port", 5900, "vnc port")
-	pflag.StringVar(&ip, "ip", "192.168.1.86", "n1 ip")
+	pflag.StringVar(&ip, "ip", "192.168.1.89", "n1 ip")
 	pflag.StringVar(&password, "password", "", "vnc password")
 	pflag.BoolVar(&debug, "debug", false, "debug mode")
 }
@@ -75,6 +75,11 @@ func main() {
 	vs.SetKeyEventCallback(func(down bool, key uint32) {
 		if down {
 			kbCh <- key
+		}
+	})
+	vs.SetPtrEventCallback(func(buttonMask int, x int, y int) {
+		if debug {
+			log.Printf("buttonMask %d x %d y %d\n", buttonMask, x, y)
 		}
 	})
 	vs.SetHaveClientStatusCallback(func(status bool) {

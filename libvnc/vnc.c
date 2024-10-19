@@ -46,6 +46,11 @@ void key_event(rfbBool down, rfbKeySym key, rfbClientPtr cl) {
     notifyServerKeyEvent(down, key, server_custom_data->serverID);
 }
 
+void ptr_event(int buttonMask, int x, int y, rfbClientPtr cl) {
+    ServerCustomData *server_custom_data = (ServerCustomData *) cl->screen->screenData;
+    notifyServerPtrEvent(buttonMask, x, y, server_custom_data->serverID);
+}
+
 void have_client_status(BufferManager *manager) {
     ServerCustomData *server_custom_data = (ServerCustomData *) manager->server->screenData;
     notifyServerHaveClientStatus(manager->have_client_flag, server_custom_data->serverID);
@@ -78,6 +83,7 @@ init_vnc_server(const int width, const int height, const int bits_per_pixel, con
     manager->server->httpDir = NULL;
     manager->server->port = port;
     manager->server->kbdAddEvent = key_event;
+    manager->server->ptrAddEvent = ptr_event;
     // 用来识别多个屏幕
     ServerCustomData *customData = (ServerCustomData *) malloc(sizeof(ServerCustomData));
     strcpy(customData->serverID, serverID);

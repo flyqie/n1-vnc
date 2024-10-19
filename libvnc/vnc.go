@@ -16,12 +16,14 @@ var RfbErrLogger io.Writer
 var VncServers map[string]*VNCServer
 
 type KeyEventCallback func(down bool, key uint32)
+type PtrEventCallback func(buttonMask int, x int, y int)
 type HaveClientStatusCallback func(have bool)
 
 type VNCServer struct {
 	manager                  *C.BufferManager
 	serverID                 string
 	keyEventCallback         KeyEventCallback
+	ptrEventCallback         PtrEventCallback
 	haveClientStatusCallback HaveClientStatusCallback
 }
 
@@ -77,6 +79,11 @@ func (v *VNCServer) SetKeyEventCallback(cb KeyEventCallback) {
 	v.keyEventCallback = cb
 }
 
+// SetPtrEventCallback 设置vnc server的ptr event callback
+func (v *VNCServer) SetPtrEventCallback(cb PtrEventCallback) {
+	v.ptrEventCallback = cb
+}
+
 // SetHaveClientStatusCallback 设置vnc server的have client status callback
 func (v *VNCServer) SetHaveClientStatusCallback(cb HaveClientStatusCallback) {
 	v.haveClientStatusCallback = cb
@@ -119,6 +126,17 @@ func notifyServerKeyEvent(down C.int8_t, key C.uint32_t, serverID *C.char) {
 	if vncServer, ok := VncServers[goServerID]; ok {
 		if vncServer.keyEventCallback != nil {
 			vncServer.keyEventCallback(goDown, uint32(key))
+		}
+	}
+}
+
+//export notifyServerPtrEvent
+func notifyServerPtrEvent(buttonMask C.int, x C.int, y C.int, serverID *C.char) {
+	goServerID := C.GoString(serverID)
+
+	if vncServer, ok := VncServers[goServerID]; ok {
+		if vncServer.ptrEventCallback != nil {
+			vncServer.ptrEventCallback(int(buttonMask), int(x), int(y))
 		}
 	}
 }
