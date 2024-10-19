@@ -181,20 +181,20 @@ int cleanup_vnc_server(BufferManager *manager) {
 void rfbServerLogInfoToString(const char *format, ...) {
     int bufferSize = 4096;
     char buffer[bufferSize];
-    va_list argptr;
-    va_start(argptr, format);
-    int n = vsnprintf(buffer, bufferSize, format, argptr);
-    va_end(argptr);
+    va_list argPtr;
+    va_start(argPtr, format);
+    int n = vsnprintf(buffer, bufferSize, format, argPtr);
+    va_end(argPtr);
     notifyServerLogInfo(buffer, n);
 }
 
 void rfbServerLogErrToString(const char *format, ...) {
     int bufferSize = 4096;
     char buffer[bufferSize];
-    va_list argptr;
-    va_start(argptr, format);
-    int n = vsnprintf(buffer, bufferSize, format, argptr);
-    va_end(argptr);
+    va_list argPtr;
+    va_start(argPtr, format);
+    int n = vsnprintf(buffer, bufferSize, format, argPtr);
+    va_end(argPtr);
     notifyServerLogErr(buffer, n);
 }
 
