@@ -8,12 +8,14 @@ import "C"
 
 import (
 	"io"
+	"sync"
 	"unsafe"
 )
 
 var RfbInfoLogger io.Writer
 var RfbErrLogger io.Writer
 var VncServers map[string]*VNCServer
+var VncServersLock sync.RWMutex
 
 type KeyEventCallback func(down bool, key uint32)
 type PtrEventCallback func(buttonMask int, x int, y int)
@@ -29,11 +31,14 @@ type VNCServer struct {
 
 func init() {
 	VncServers = make(map[string]*VNCServer)
+	VncServersLock = sync.RWMutex{}
 	C.setServerRfbLog()
 }
 
 // NewVNCServer 创建vnc server
 func NewVNCServer(width, height, bitsPerPixel, port int, desktopName, password, serverID string) *VNCServer {
+	VncServersLock.Lock()
+	defer VncServersLock.Unlock()
 	if _, ok := VncServers[serverID]; ok {
 		return nil
 	}
@@ -123,6 +128,8 @@ func notifyServerKeyEvent(down C.int8_t, key C.uint32_t, serverID *C.char) {
 	goServerID := C.GoString(serverID)
 	goDown := down != 0
 
+	VncServersLock.RLock()
+	defer VncServersLock.RUnlock()
 	if vncServer, ok := VncServers[goServerID]; ok {
 		if vncServer.keyEventCallback != nil {
 			vncServer.keyEventCallback(goDown, uint32(key))
@@ -134,6 +141,8 @@ func notifyServerKeyEvent(down C.int8_t, key C.uint32_t, serverID *C.char) {
 func notifyServerPtrEvent(buttonMask C.int, x C.int, y C.int, serverID *C.char) {
 	goServerID := C.GoString(serverID)
 
+	VncServersLock.RLock()
+	defer VncServersLock.RUnlock()
 	if vncServer, ok := VncServers[goServerID]; ok {
 		if vncServer.ptrEventCallback != nil {
 			vncServer.ptrEventCallback(int(buttonMask), int(x), int(y))
@@ -146,6 +155,8 @@ func notifyServerHaveClientStatus(flag C.int, serverID *C.char) {
 	goServerID := C.GoString(serverID)
 	goFlag := flag != 0
 
+	VncServersLock.RLock()
+	defer VncServersLock.RUnlock()
 	if vncServer, ok := VncServers[goServerID]; ok {
 		if vncServer.haveClientStatusCallback != nil {
 			vncServer.haveClientStatusCallback(goFlag)
