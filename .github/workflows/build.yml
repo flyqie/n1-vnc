@@ -68,7 +68,7 @@ jobs:
         run: |
           mkdir external
           cd external
-          git clone https://github.com/LibVNC/libvncserver.git -b LibVNCServer-0.9.14
+          git clone https://github.com/LibVNC/libvncserver.git -b LibVNCServer-0.9.15
 
       - name: 'Build libvncserver'
         run: |
